@@ -1,0 +1,6 @@
+---
+- name: Bootstrap all cluster nodes
+  hosts: postgres
+  become: true
+  roles:
+    - common
