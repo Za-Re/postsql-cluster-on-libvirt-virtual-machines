@@ -1,0 +1,9 @@
+postgresql_version: "18"
+
+# Debian/Ubuntu-specific layout — postgresql-common keeps config
+# outside PGDATA, unlike most other distros. See docs/DECISIONS.md.
+postgresql_data_dir: "/var/lib/postgresql/{{ postgresql_version }}/main"
+postgresql_config_dir: "/etc/postgresql/{{ postgresql_version }}/main"
+postgresql_bin_dir: "/usr/lib/postgresql/{{ postgresql_version }}/bin"
+
+postgresql_port: 5432
