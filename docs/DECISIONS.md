@@ -152,6 +152,57 @@ Added `devices.serials`/`devices.consoles` (PTY-backed) to enable
   the whole `devices` block, so Terraform still manages disks/NICs
   normally going forward.
 
+## Ansible: `host_key_checking = False`
+
+VMs get destroyed/recreated at the same IPs regularly, and each fresh
+VM gets a brand-new SSH host key on first boot. Without disabling the
+check, every recreate would trip "REMOTE HOST IDENTIFICATION HAS
+CHANGED" and refuse to connect until `~/.ssh/known_hosts` is manually
+cleared. Standard trade for ephemeral lab infra; acceptable here since
+the subnet is NAT-isolated and reachable only from this host (same
+reasoning as the Phase 1 "administrative source" restriction).
+
+A more surgical alternative was built and verified working — a small
+script (`ssh-keygen -R` + `ssh-keyscan` per node, IPs read from
+`terraform output -json`) that keeps `host_key_checking` at its secure
+default instead of disabling it outright. Reverted to the plain
+disable for now to keep the workflow simpler while iterating on later
+phases; the scripted approach is easy to reinstate later (see git
+history) if tighter host-key verification is ever wanted. Would not
+rely on the blanket disable on a real fleet with persistent hosts —
+proper fix there is SSH CA host certificates or scripted `known_hosts`
+management.
+
+## Ansible inventory: point at the file, not the directory
+
+`ansible.cfg`'s `inventory` was initially set to `inventory/` (the
+directory) so a second, Terraform-generated inventory source could be
+added later without touching this config again — modeled on how
+`network.tf` was designed to allow future extension. In practice,
+`ansible-inventory`/`ansible` silently failed to parse anything from
+the directory ("Unable to parse ... as an inventory source"), even
+though `ini` is in `INVENTORY_ENABLED` by default and pointing directly
+at the file (`-i inventory/hosts.ini`) works perfectly. Best
+explanation: the `ini` plugin's directory-auto-discovery participation
+is more limited than YAML's in this Ansible version. Fixed by pointing
+`inventory` directly at `inventory/hosts.ini`. If a second inventory
+source is ever added, use a comma-separated list in `ansible.cfg`
+(or convert to YAML, which does support directory scanning) rather
+than relying on directory auto-discovery.
+
+## PostgreSQL version and paths as explicit variables (`group_vars/all.yml`)
+
+Targeting PG 18, matching the lab's own stated baseline. Data/config/bin
+paths are variables, not hardcoded in tasks — required by item 8, and
+genuinely necessary since Debian/Ubuntu's `postgresql-common` packaging
+keeps config (`postgresql.conf`, `pg_hba.conf`) *outside* PGDATA
+(`/etc/postgresql/<version>/main` vs `/var/lib/postgresql/<version>/main`),
+unlike most other distros which nest config inside the data directory.
+A RHEL-based image would need different values here, not different task
+logic. Also worth remembering: Debian's own tooling (`pg_lsclusters`,
+`pg_ctlcluster`) calls a *single server instance* a "cluster" — a
+different sense of the word than our 3-node primary+replicas cluster.
+
 ## VM sizing: 1.5 GB RAM per node for dev, bump to 2 GB for the graded run
 
 Lab minimum is 2 GB RAM x 3 nodes = 6 GB, which leaves ~0 slack against
