@@ -2,5 +2,8 @@
 - name: Bootstrap all cluster nodes
   hosts: postgres
   become: true
+  vars_files:
+    - ../group_vars/all.yml
   roles:
     - common
+    - postgres
