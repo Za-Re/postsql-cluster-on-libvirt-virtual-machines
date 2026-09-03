@@ -50,3 +50,37 @@
   community.postgresql.postgresql_user:
     name: postgres
     password: "{{ postgres_superuser_password }}"
+
+# All postmaster-context — take effect only after a restart, not just
+# a reload. Set on every node (not just the primary), so a promoted
+# replica already has these active on itself. See docs/DECISIONS.md.
+- name: Configure replication-related settings
+  become_user: postgres
+  community.postgresql.postgresql_set:
+    name: "{{ item.name }}"
+    value: "{{ item.value }}"
+  loop:
+    - { name: wal_level, value: "{{ postgresql_wal_level }}" }
+    - { name: max_wal_senders, value: "{{ postgresql_max_wal_senders }}" }
+    - { name: max_replication_slots, value: "{{ postgresql_max_replication_slots }}" }
+    - { name: hot_standby, value: "{{ postgresql_hot_standby }}" }
+    - { name: listen_addresses, value: "*" }
+  notify: Restart postgresql
+
+- name: Create replication role
+  become_user: postgres
+  community.postgresql.postgresql_user:
+    name: "{{ replication_user }}"
+    password: "{{ replicator_password }}"
+    role_attr_flags: LOGIN,REPLICATION
+
+- name: Allow replication connections from the cluster subnet
+  become_user: postgres
+  community.postgresql.postgresql_pg_hba:
+    dest: "{{ postgresql_config_dir }}/pg_hba.conf"
+    contype: host
+    databases: replication
+    users: "{{ replication_user }}"
+    address: "{{ cluster_network_cidr }}"
+    method: scram-sha-256
+  notify: Reload postgresql

@@ -13,3 +13,16 @@ postgresql_port: 5432
 cluster_network_cidr: "192.168.100.0/24"
 
 postgres_superuser_password: "{{ vault_postgres_superuser_password }}"
+
+# Least-privilege role replicas use to stream WAL — not the postgres
+# superuser. Real value lives encrypted in group_vars/vault.yml.
+replication_user: replicator
+replicator_password: "{{ vault_replicator_password }}"
+
+# Set on every node, not just the primary — a promoted replica (Phase
+# 5) needs these already active on itself so its own replicas can
+# still follow it. See docs/DECISIONS.md.
+postgresql_wal_level: replica
+postgresql_max_wal_senders: 10
+postgresql_max_replication_slots: 10
+postgresql_hot_standby: "on"
