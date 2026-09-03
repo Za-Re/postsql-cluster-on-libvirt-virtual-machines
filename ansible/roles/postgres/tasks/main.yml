@@ -39,3 +39,14 @@
     port: "{{ postgresql_port | string }}"
     proto: tcp
     src: "{{ cluster_network_cidr }}"
+
+- name: Ensure psycopg2 is installed (required by postgresql_user module)
+  ansible.builtin.apt:
+    name: python3-psycopg2
+    state: present
+
+- name: Set postgres superuser password
+  become_user: postgres
+  community.postgresql.postgresql_user:
+    name: postgres
+    password: "{{ postgres_superuser_password }}"

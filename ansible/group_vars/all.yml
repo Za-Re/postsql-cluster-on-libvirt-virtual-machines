@@ -11,3 +11,5 @@ postgresql_port: 5432
 # Must match terraform/variables.tf's network_cidr — no automatic link
 # between the two tools yet. See docs/DECISIONS.md.
 cluster_network_cidr: "192.168.100.0/24"
+
+postgres_superuser_password: "{{ vault_postgres_superuser_password }}"
