@@ -16,6 +16,7 @@
       - gnupg
       - chrony
       - ufw
+      - acl
     state: present
 
 - name: Ensure chrony (time sync) is enabled and running
