@@ -190,6 +190,28 @@ source is ever added, use a comma-separated list in `ansible.cfg`
 (or convert to YAML, which does support directory scanning) rather
 than relying on directory auto-discovery.
 
+The same auto-discovery mismatch applies to *every* file under
+`group_vars/` here, not just `all.yml` — `vault.yml` hit the identical
+"variable is undefined" error until it was also added to the
+playbook's `vars_files` list. Any new `group_vars/*.yml` added later
+needs the same explicit treatment, or its variables silently won't
+load.
+
+## Ansible Vault: `become_user` to an unprivileged user needs `acl`
+
+Setting the `postgres` superuser password via
+`community.postgresql.postgresql_user` requires running as the
+`postgres` OS user (peer auth on the local socket) — `become_user:
+postgres` on top of `become: true`. This failed with `chmod: invalid
+mode: 'A+user:postgres:rx:allow'` — Ansible's mechanism for handing
+off its temp files to an unprivileged `become_user` needs the `acl`
+package (`setfacl`/`getfacl`) on the target; without it, Ansible falls
+back to a broken BSD-style ACL syntax that doesn't exist on Linux.
+Fixed by adding `acl` to `roles/common`'s base packages — a general
+Ansible-operational prerequisite (needed by any future role that uses
+`become_user` to switch to a non-root account), not Postgres-specific,
+which is why it lives in `common` rather than `postgres`.
+
 ## PostgreSQL version and paths as explicit variables (`group_vars/all.yml`)
 
 Targeting PG 18, matching the lab's own stated baseline. Data/config/bin
