@@ -40,13 +40,11 @@ routing, and safe rejoin after failover are left to the operator. See
 
 | Node | IP | Role | vCPU/RAM/Disk |
 |---|---|---|---|
-| pg-01 | 192.168.100.11 | primary | 2 / 1.5 GB (dev) / 12 GB |
-| pg-02 | 192.168.100.12 | replica | 2 / 1.5 GB (dev) / 12 GB |
-| pg-03 | 192.168.100.13 | replica | 2 / 1.5 GB (dev) / 12 GB |
+| pg-01 | 192.168.100.11 | primary | 2 / 2 GB (dev) / 12 GB |
+| pg-02 | 192.168.100.12 | replica | 2 / 2 GB (dev) / 12 GB |
+| pg-03 | 192.168.100.13 | replica | 2 / 2 GB (dev) / 12 GB |
 
-RAM is sized down for day-to-day dev; bump `memory_mib` to 2048 in
-`terraform/variables.tf` for the graded run (lab minimum). Static IPs
-via libvirt DHCP reservations keyed to each VM's MAC — see
+Static IPs via libvirt DHCP reservations keyed to each VM's MAC — see
 `terraform/network.tf`.
 
 ## Infrastructure layer (Terraform)

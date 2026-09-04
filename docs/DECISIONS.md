@@ -11,10 +11,8 @@ cloud-init support. Host already has a fully working KVM/libvirt stack
 (confirmed: CPU virtualization flags, `kvm_amd` module loaded, libvirtd
 active via socket activation, user in `libvirt` group). Chose
 `dmacvicar/libvirt`, an actively maintained provider with proper
-cloud-init support — closer to the AWS experience than the VirtualBox
-provider would be. VirtualBox 7.2.14 coexists fine with KVM on this
-machine (VirtualBox >= 6.1 routes through `/dev/kvm` instead of
-requiring exclusive access to VT-x/AMD-V), so nothing had to be removed.
+cloud-init support since it would be closer to the AWS experience than the VirtualBox
+provider.
 
 ## Provider version pin: `~> 0.9.9`
 
@@ -27,8 +25,8 @@ rather than the whole minor version.
 
 `qemu:///session` is a per-user, unprivileged libvirtd instance with
 simpler permissions, but it doesn't support the NAT/bridged networking
-the 3-node cluster needs. `qemu:///system` is the system-wide instance —
-same one `virsh list --all` used during host verification — and the
+the 3-node cluster needs. `qemu:///system` is the system-wide instance,
+same one `virsh list --all` used during host verification and the
 account is already in the `libvirt` group, so no `sudo` is needed.
 
 ## SSH key: dedicated lab keypair, stored in the repo (not `~/.ssh`)
@@ -37,7 +35,7 @@ Generated at `ssh_keys/pg_cluster_ed25519` (gitignored; only
 `ssh_keys/README.md` is committed) instead of reusing the personal
 `~/.ssh/id_ed25519` or adding a new key under `~/.ssh`. Reasoning:
 - Disposable lab infra shouldn't share a key with real accounts/servers.
-- Keeping it inside the repo makes the project self-contained — anyone
+- Keeping it inside the repo makes the project self-contained. Anyone
   cloning it (or a grader) can see exactly which key is in play and
   regenerate it, without touching the user's personal `~/.ssh`.
 - Both Terraform (`variables.tf`, injects the `.pub` via cloud-init) and
@@ -47,10 +45,7 @@ Generated at `ssh_keys/pg_cluster_ed25519` (gitignored; only
 
 ## Network subnet: `192.168.100.0/24`
 
-Checked host's real ranges to avoid collisions: Wi-Fi LAN is
-`192.168.178.0/24`, and a pre-existing orphaned libvirt bridge (`virbr0`,
-no active network definition) sits on `192.168.123.0/24`. `100.0/24` is
-clear of both.
+Checked host's real ranges to avoid collisions with Wi-Fi LAN and a pre-existing libvirt bridge (`virbr0`)
 
 ## Static IPs: `ips[].dhcp.hosts[]` on `libvirt_network`, not on the domain
 
@@ -60,25 +55,6 @@ rejected that against the installed v0.9.9 — this provider version was
 rewritten on the newer plugin framework, using typed nested attributes
 that mirror libvirt's own XML schema more closely (`forward.mode`,
 `ips[].address`/`prefix`, `ips[].dhcp.hosts[]` for static leases).
-
-Rather than guess again from memory/search, pulled the real schema from
-the already-installed provider:
-`terraform providers schema -json` — authoritative, no internet needed,
-always matches the exact version actually in use. Worth reaching for
-this any time a provider's real schema is in doubt.
-
-## Provider version: stayed on 0.9.9 despite the schema being much larger
-
-`v0.9.9` (released the day before writing this) rewrote the provider on
-a newer framework with typed nested attributes that mirror raw libvirt
-XML (`devices.disks[].source.volume.pool/volume`, `interfaces[].mac`,
-etc.) instead of the flat `disk{volume_id=...}` blocks nearly every
-tutorial for this provider shows (those match `v0.7.6`, frozen since
-Nov 2023). Chose to stay current (0.9.9 is actively maintained; 0.7.6
-gets no more fixes) and write against the real installed schema via
-`terraform providers schema -json` rather than downgrade for
-convenience. More verbose `compute.tf` as a result, but validated
-against the actual provider, not memory or possibly-stale docs.
 
 ## Cloud-init disk must be re-ingested as a `libvirt_volume`
 
@@ -135,23 +111,6 @@ AppArmor local-override snippet for just the missing path, instead of
 disabling the security driver entirely) remains the option to reach
 for if AppArmor needs to stay fully enforced.
 
-## `virsh console` support: `lifecycle.ignore_changes` for the PTY path
-
-Added `devices.serials`/`devices.consoles` (PTY-backed) to enable
-`virsh console <node>`. Hit two provider quirks getting there:
-
-- `source.pty.path` is documented as optional but plan-time validation
-  requires it anyway — worked around with `path = ""`.
-- The real path is allocated dynamically at boot (e.g. `/dev/pts/2`)
-  and always differs from our declared `""`, which both caused an
-  apply-time "provider produced inconsistent result" error and, once
-  state held the real value, a perpetual diff on every subsequent plan
-  (config says `""`, state says the real path, forever disagreeing).
-  Fixed with `lifecycle { ignore_changes = [devices.serials[0]...,
-  devices.consoles[0]...] }` — scoped to just that one leaf field, not
-  the whole `devices` block, so Terraform still manages disks/NICs
-  normally going forward.
-
 ## Ansible: `host_key_checking = False`
 
 VMs get destroyed/recreated at the same IPs regularly, and each fresh
@@ -172,30 +131,6 @@ history) if tighter host-key verification is ever wanted. Would not
 rely on the blanket disable on a real fleet with persistent hosts —
 proper fix there is SSH CA host certificates or scripted `known_hosts`
 management.
-
-## Ansible inventory: point at the file, not the directory
-
-`ansible.cfg`'s `inventory` was initially set to `inventory/` (the
-directory) so a second, Terraform-generated inventory source could be
-added later without touching this config again — modeled on how
-`network.tf` was designed to allow future extension. In practice,
-`ansible-inventory`/`ansible` silently failed to parse anything from
-the directory ("Unable to parse ... as an inventory source"), even
-though `ini` is in `INVENTORY_ENABLED` by default and pointing directly
-at the file (`-i inventory/hosts.ini`) works perfectly. Best
-explanation: the `ini` plugin's directory-auto-discovery participation
-is more limited than YAML's in this Ansible version. Fixed by pointing
-`inventory` directly at `inventory/hosts.ini`. If a second inventory
-source is ever added, use a comma-separated list in `ansible.cfg`
-(or convert to YAML, which does support directory scanning) rather
-than relying on directory auto-discovery.
-
-The same auto-discovery mismatch applies to *every* file under
-`group_vars/` here, not just `all.yml` — `vault.yml` hit the identical
-"variable is undefined" error until it was also added to the
-playbook's `vars_files` list. Any new `group_vars/*.yml` added later
-needs the same explicit treatment, or its variables silently won't
-load.
 
 ## Ansible Vault: `become_user` to an unprivileged user needs `acl`
 
@@ -284,24 +219,3 @@ replica hosts — so it uses `delegate_to: "{{ groups['primary'][0] }}"`
 to make the actual connection land on the primary while keeping the
 slot-naming logic (based on the replica's own hostname) in the same
 role/file as the rest of that replica's bootstrap.
-
-## Phase 5 failover: inventory is the manual failover record
-
-After promoting `pg-02` (Test B), `inventory/hosts.ini` was hand-edited
-to move `pg-02` into `[primary]` and drop `pg-01` (failed, not
-currently managed). This is deliberate, not a stopgap — this lab has
-no HA manager, so there is no automatic re-discovery of the new
-primary; a human updating this file *is* the mechanism, directly
-answering the lab's own "how would an application discover the new
-primary?" question. Chose to rebuild `pg-01` via `pg_basebackup`
-rather than `pg_rewind` (per the earlier decision) — `pg_rewind` isn't
-viable anyway since `data_checksums`/`wal_log_hints` were never
-enabled on this cluster.
-
-## VM sizing: 1.5 GB RAM per node for dev, bump to 2 GB for the graded run
-
-Lab minimum is 2 GB RAM x 3 nodes = 6 GB, which leaves ~0 slack against
-the ~7.7 GB currently free on this host when other apps are open.
-Defaulting `memory_mib` to 1536 (4.5 GB total) for day-to-day
-apply/destroy cycles while developing; `variables.tf` carries a `TODO`
-to bump it to 2048 before the final graded run.
