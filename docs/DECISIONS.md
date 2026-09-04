@@ -285,6 +285,19 @@ to make the actual connection land on the primary while keeping the
 slot-naming logic (based on the replica's own hostname) in the same
 role/file as the rest of that replica's bootstrap.
 
+## Phase 5 failover: inventory is the manual failover record
+
+After promoting `pg-02` (Test B), `inventory/hosts.ini` was hand-edited
+to move `pg-02` into `[primary]` and drop `pg-01` (failed, not
+currently managed). This is deliberate, not a stopgap — this lab has
+no HA manager, so there is no automatic re-discovery of the new
+primary; a human updating this file *is* the mechanism, directly
+answering the lab's own "how would an application discover the new
+primary?" question. Chose to rebuild `pg-01` via `pg_basebackup`
+rather than `pg_rewind` (per the earlier decision) — `pg_rewind` isn't
+viable anyway since `data_checksums`/`wal_log_hints` were never
+enabled on this cluster.
+
 ## VM sizing: 1.5 GB RAM per node for dev, bump to 2 GB for the graded run
 
 Lab minimum is 2 GB RAM x 3 nodes = 6 GB, which leaves ~0 slack against
