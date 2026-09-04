@@ -8,3 +8,15 @@
   roles:
     - common
     - postgres
+
+- name: Bootstrap replicas from the primary
+  hosts: replicas
+  become: true
+  # One at a time — concurrent pg_basebackup runs against the same
+  # primary caused a WAL-retention race (see docs/DECISIONS.md).
+  serial: 1
+  vars_files:
+    - ../group_vars/all.yml
+    - ../group_vars/vault.yml
+  roles:
+    - replica

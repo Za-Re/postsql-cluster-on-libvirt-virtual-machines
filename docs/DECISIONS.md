@@ -225,6 +225,66 @@ logic. Also worth remembering: Debian's own tooling (`pg_lsclusters`,
 `pg_ctlcluster`) calls a *single server instance* a "cluster" — a
 different sense of the word than our 3-node primary+replicas cluster.
 
+## Replica bootstrap requires an explicit `bootstrap_replica=true` flag
+
+`roles/replica`'s destructive block (stop postgresql, wipe PGDATA,
+`pg_basebackup` from the primary) was originally guarded only by
+`standby.signal` not existing. That's correct for the common case
+(already-bootstrapped replica, playbook re-run) but has a real gap:
+`pg_promote()` (Phase 5) automatically removes `standby.signal` as
+part of promotion, and `inventory/hosts.ini` is static — a promoted
+node stays listed under `replicas` with nothing updating that
+automatically. A routine playbook re-run after a Phase 5 promotion
+would see "no standby.signal" on the now-primary node and wipe its
+real data. Fixed by requiring `--extra-vars "bootstrap_replica=true"`
+in addition to the `standby.signal` check, so the destructive path can
+never fire as a side effect of an ordinary run — only when explicitly
+intended. A more robust fix (comparing Postgres's own cluster system
+identifier, shared by a primary and its real replicas but different
+for any independently-initialized instance — closer to what Patroni
+actually does) was considered and set aside as more than this lab
+needs.
+
+## `serial: 1` on the replica-bootstrap play
+
+First real run: `pg-03`'s `pg_basebackup` succeeded, `pg-02`'s failed
+with `requested WAL segment ... has already been removed`. Ansible
+runs a play's tasks across hosts in parallel by default — both
+replicas were pulling a full base backup from the primary at the same
+time, which slowed `pg-02`'s enough that the primary recycled an older
+WAL segment before `pg-02`'s backup process consumed it, despite the
+replication slot. `pg_basebackup` cleaned up its own partial data on
+failure, so no manual cleanup was needed — just a re-run. Fixed by
+adding `serial: 1` to the replica play, forcing replicas to bootstrap
+one at a time rather than racing each other against the same primary.
+
+## Replication slot created separately, not via `pg_basebackup --create-slot`
+
+Second failure on retry: `pg_02_slot` already exists — `pg_basebackup
+--create-slot` creates the slot as an early step, and when the first
+attempt failed later (the WAL-race issue above), its cleanup only
+removed the copied data, not the slot already created on the primary.
+`--create-slot` errors outright on an existing slot, so every retry
+kept failing the same way without manual cleanup on the primary.
+
+Fixed by creating the slot as its own explicit step, using
+`community.postgresql.postgresql_slot` with `state: present`
+(idempotent — confirms the slot exists rather than erroring if it
+already does, cleanly absorbing the orphaned slot from the earlier
+failures) and `immediately_reserve: true` (reserves the slot's WAL
+retention point immediately at creation time, rather than only once
+`pg_basebackup` gets around to connecting — likely also a more
+deterministic fix for the original WAL-race than hoping timing works
+out). `pg_basebackup` then references the pre-existing slot via
+`--slot=` without `--create-slot`.
+
+Slots are a primary-side concept (they don't exist on a replica at
+all), but this task lives in `roles/replica`, which runs against the
+replica hosts — so it uses `delegate_to: "{{ groups['primary'][0] }}"`
+to make the actual connection land on the primary while keeping the
+slot-naming logic (based on the replica's own hostname) in the same
+role/file as the rest of that replica's bootstrap.
+
 ## VM sizing: 1.5 GB RAM per node for dev, bump to 2 GB for the graded run
 
 Lab minimum is 2 GB RAM x 3 nodes = 6 GB, which leaves ~0 slack against
