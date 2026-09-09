@@ -1,0 +1,9 @@
+# Dedicated SSH keypair for this lab's VMs (generated locally, private
+# key must never be committed). See ssh_keys/README.md for how to
+# regenerate it.
+ssh_keys/*
+!ssh_keys/README.md
+
+# Common OS/editor cruft.
+.DS_Store
+*.swp
