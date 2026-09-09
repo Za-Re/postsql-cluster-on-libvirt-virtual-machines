@@ -18,7 +18,7 @@ one. That gap is the point of this lab.
 
    ```bash
    ssh -i ssh_keys/pg_cluster_ed25519 ubuntu@192.168.100.11 \
-     "sudo -u postgres psql -d academy -c \"INSERT INTO cluster_test(message) VALUES ('primary still writable while pg-02 is down');\""
+     "sudo -u postgres psql -d database_test -c \"INSERT INTO cluster_test(message) VALUES ('primary still writable while pg-02 is down');\""
    ```
 
 3. `pg_stat_replication` on the primary correctly showed only `pg-03`.
@@ -42,7 +42,7 @@ one. That gap is the point of this lab.
 
    # and the row it missed is now present
    ssh -i ssh_keys/pg_cluster_ed25519 ubuntu@192.168.100.12 \
-     "sudo -u postgres psql -d academy -c 'SELECT * FROM cluster_test ORDER BY id;'"
+     "sudo -u postgres psql -d database_test -c 'SELECT * FROM cluster_test ORDER BY id;'"
    ```
 
 **What changes if the standby is offline too long**: `pg-02` has a
@@ -139,7 +139,7 @@ impossible and force a full rebuild instead of a simple restart.
      "sudo -u postgres psql -c \"SELECT application_name, client_addr, state, sync_state FROM pg_stat_replication;\""
 
    ssh -i ssh_keys/pg_cluster_ed25519 ubuntu@192.168.100.13 \
-     "sudo -u postgres psql -c 'SELECT pg_is_in_recovery();' -d academy -c 'SELECT * FROM cluster_test ORDER BY id;'"
+     "sudo -u postgres psql -c 'SELECT pg_is_in_recovery();' -d database_test -c 'SELECT * FROM cluster_test ORDER BY id;'"
    ```
 
 7. **`pg-01` was deliberately not restarted as a writable server** —

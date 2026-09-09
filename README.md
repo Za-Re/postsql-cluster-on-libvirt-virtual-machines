@@ -80,13 +80,13 @@ ssh -i ../ssh_keys/pg_cluster_ed25519 ubuntu@192.168.100.13 \
 
 # write on the primary, confirm it shows up on both replicas
 ssh -i ../ssh_keys/pg_cluster_ed25519 ubuntu@192.168.100.11 \
-  "sudo -u postgres psql -c 'CREATE DATABASE academy;'"
+  "sudo -u postgres psql -c 'CREATE DATABASE database_test;'"
 ssh -i ../ssh_keys/pg_cluster_ed25519 ubuntu@192.168.100.11 \
-  "sudo -u postgres psql -d academy -c 'CREATE TABLE cluster_test (id BIGSERIAL PRIMARY KEY, message TEXT NOT NULL, created_at TIMESTAMPTZ DEFAULT now());'"
+  "sudo -u postgres psql -d database_test -c 'CREATE TABLE cluster_test (id BIGSERIAL PRIMARY KEY, message TEXT NOT NULL, created_at TIMESTAMPTZ DEFAULT now());'"
 ssh -i ../ssh_keys/pg_cluster_ed25519 ubuntu@192.168.100.11 \
-  "sudo -u postgres psql -d academy -c \"INSERT INTO cluster_test(message) VALUES ('hello from babak academy');\""
+  "sudo -u postgres psql -d database_test -c \"INSERT INTO cluster_test(message) VALUES ('hello from database_test');\""
 ssh -i ../ssh_keys/pg_cluster_ed25519 ubuntu@192.168.100.12 \
-  "sudo -u postgres psql -d academy -c 'SELECT * FROM cluster_test;'"
+  "sudo -u postgres psql -d database_test -c 'SELECT * FROM cluster_test;'"
 ```
 
 See `FAILOVER.md` for the full set of manual failover checks (stopping/restarting nodes, promotion, rejoin).
