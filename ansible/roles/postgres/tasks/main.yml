@@ -1,0 +1,86 @@
+---
+# Ubuntu's default repos only have PostgreSQL 16 (confirmed on a real
+# node) — PGDG is the official upstream repo needed for version 18.
+- name: Ensure /usr/share/keyrings directory exists
+  ansible.builtin.file:
+    path: /usr/share/keyrings
+    state: directory
+    mode: "0755"
+
+- name: Add PGDG signing key
+  ansible.builtin.shell: |
+    curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /usr/share/keyrings/postgresql-keyring.gpg
+  args:
+    creates: /usr/share/keyrings/postgresql-keyring.gpg
+
+- name: Add PGDG apt repository
+  ansible.builtin.apt_repository:
+    repo: "deb [signed-by=/usr/share/keyrings/postgresql-keyring.gpg] http://apt.postgresql.org/pub/repos/apt {{ ansible_distribution_release }}-pgdg main"
+    filename: pgdg
+    state: present
+    update_cache: true
+
+- name: Install PostgreSQL server and client
+  ansible.builtin.apt:
+    name:
+      - "postgresql-{{ postgresql_version }}"
+      - "postgresql-client-{{ postgresql_version }}"
+    state: present
+
+- name: Ensure PostgreSQL is enabled and running
+  ansible.builtin.service:
+    name: postgresql
+    enabled: true
+    state: started
+
+- name: Allow PostgreSQL port through ufw from the cluster subnet
+  community.general.ufw:
+    rule: allow
+    port: "{{ postgresql_port | string }}"
+    proto: tcp
+    src: "{{ cluster_network_cidr }}"
+
+- name: Ensure psycopg2 is installed (required by postgresql_user module)
+  ansible.builtin.apt:
+    name: python3-psycopg2
+    state: present
+
+- name: Set postgres superuser password
+  become_user: postgres
+  community.postgresql.postgresql_user:
+    name: postgres
+    password: "{{ postgres_superuser_password }}"
+
+# All postmaster-context — take effect only after a restart, not just
+# a reload. Set on every node (not just the primary), so a promoted
+# replica already has these active on itself. See docs/DECISIONS.md.
+- name: Configure replication-related settings
+  become_user: postgres
+  community.postgresql.postgresql_set:
+    name: "{{ item.name }}"
+    value: "{{ item.value }}"
+  loop:
+    - { name: wal_level, value: "{{ postgresql_wal_level }}" }
+    - { name: max_wal_senders, value: "{{ postgresql_max_wal_senders }}" }
+    - { name: max_replication_slots, value: "{{ postgresql_max_replication_slots }}" }
+    - { name: hot_standby, value: "{{ postgresql_hot_standby }}" }
+    - { name: listen_addresses, value: "*" }
+  notify: Restart postgresql
+
+- name: Create replication role
+  become_user: postgres
+  community.postgresql.postgresql_user:
+    name: "{{ replication_user }}"
+    password: "{{ replicator_password }}"
+    role_attr_flags: LOGIN,REPLICATION
+
+- name: Allow replication connections from the cluster subnet
+  become_user: postgres
+  community.postgresql.postgresql_pg_hba:
+    dest: "{{ postgresql_config_dir }}/pg_hba.conf"
+    contype: host
+    databases: replication
+    users: "{{ replication_user }}"
+    address: "{{ cluster_network_cidr }}"
+    method: scram-sha-256
+  notify: Reload postgresql

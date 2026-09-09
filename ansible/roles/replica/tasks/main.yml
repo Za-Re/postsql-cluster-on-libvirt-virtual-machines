@@ -1,0 +1,73 @@
+---
+- name: Check whether this node is already a standby
+  ansible.builtin.stat:
+    path: "{{ postgresql_data_dir }}/standby.signal"
+  register: standby_signal
+
+# Requires --extra-vars "bootstrap_replica=true" — guards against ever
+# wiping a node's real data as a side effect of a routine playbook
+# run. A promoted node (Phase 5) loses standby.signal automatically
+# and would otherwise still match "not yet a standby" here, since
+# inventory group membership doesn't update on its own after a manual
+# promotion. See docs/DECISIONS.md.
+- name: Bootstrap this node as a replica of the primary
+  when:
+    - not standby_signal.stat.exists
+    - bootstrap_replica | default(false) | bool
+  block:
+    - name: Stop postgresql before replacing local data
+      ansible.builtin.service:
+        name: postgresql
+        state: stopped
+
+    - name: Wipe the existing (independent, empty) data directory
+      ansible.builtin.file:
+        path: "{{ postgresql_data_dir }}"
+        state: absent
+
+    - name: Recreate an empty data directory owned by postgres
+      ansible.builtin.file:
+        path: "{{ postgresql_data_dir }}"
+        state: directory
+        owner: postgres
+        group: postgres
+        mode: "0700"
+
+    - name: Create .pgpass for the replication connection
+      ansible.builtin.copy:
+        dest: /var/lib/postgresql/.pgpass
+        owner: postgres
+        group: postgres
+        mode: "0600"
+        content: >-
+          {{ hostvars[groups['primary'][0]].ansible_host }}:{{ postgresql_port }}:replication:{{ replication_user }}:{{ replicator_password }}
+
+    # Replication slots are a primary-side concept — created here via
+    # delegate_to rather than pg_basebackup's own --create-slot, which
+    # errors instead of no-op'ing on a slot orphaned by an earlier
+    # failed attempt. See docs/DECISIONS.md.
+    - name: Ensure replication slot exists on the primary
+      delegate_to: "{{ groups['primary'][0] }}"
+      become_user: postgres
+      community.postgresql.postgresql_slot:
+        name: "{{ inventory_hostname | replace('-', '_') }}_slot"
+        slot_type: physical
+        immediately_reserve: true
+        state: present
+
+    - name: Run pg_basebackup from the primary
+      become_user: postgres
+      ansible.builtin.command:
+        cmd: >-
+          {{ postgresql_bin_dir }}/pg_basebackup
+          -h {{ hostvars[groups['primary'][0]].ansible_host }}
+          -p {{ postgresql_port }}
+          -U {{ replication_user }}
+          -D {{ postgresql_data_dir }}
+          -R -X stream -c fast
+          --slot={{ inventory_hostname | replace('-', '_') }}_slot
+
+    - name: Start postgresql as a standby
+      ansible.builtin.service:
+        name: postgresql
+        state: started

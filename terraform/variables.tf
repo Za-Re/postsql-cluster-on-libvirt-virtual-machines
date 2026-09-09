@@ -13,8 +13,7 @@ variable "vcpu" {
 variable "memory_mib" {
   description = "RAM per VM in MiB."
   type        = number
-  # TODO: bump to 2048 (lab minimum) before the graded run — see docs/DECISIONS.md.
-  default = 1536
+  default = 2048
 }
 
 variable "disk_size_gib" {

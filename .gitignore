@@ -4,6 +4,10 @@
 ssh_keys/*
 !ssh_keys/README.md
 
+# Ansible Vault password (generated locally, must never be committed).
+# See ansible/README.md for how to regenerate it.
+ansible/.vault_pass
+
 # Common OS/editor cruft.
 .DS_Store
 *.swp
